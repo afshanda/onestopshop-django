@@ -50,8 +50,8 @@ class Account(AbstractBaseUser):
     last_login      = models.DateTimeField(auto_now_add=True)
     is_admin        = models.BooleanField(default=False)
     is_staff        = models.BooleanField(default=False)
-    is_active        = models.BooleanField(default=False)
-    is_superadmin        = models.BooleanField(default=False)
+    is_active       = models.BooleanField(default=False)
+    is_superadmin   = models.BooleanField(default=False)
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
@@ -69,3 +69,4 @@ class Account(AbstractBaseUser):
 
     def has_module_perms(self, add_label):
         return True
+    
