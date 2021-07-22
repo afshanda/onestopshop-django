@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'account.apps.AccountConfig',
     'store.apps.StoreConfig',
     'carts.apps.CartsConfig',
+    'orders.apps.OrdersConfig',
 ]
 
 MIDDLEWARE = [
@@ -139,6 +140,6 @@ MESSAGE_TAGS = {
 
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
-EMAIL_HOST_USER = 'afshandajabeen@gmail.com'
-EMAIL_HOST_PASSWORD = 'jnafannyjj56789!@#$%'
+EMAIL_HOST_USER = 'jafshanda@gmail.com'
+EMAIL_HOST_PASSWORD = 'jafshanda12345@'
 EMAIL_USE_TLS =True
