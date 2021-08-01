@@ -1,12 +1,88 @@
-from orders.models import Order
+from orders.models import Order, OrderProduct, Payment
 from orders.forms import OrderForm
 from django.shortcuts import redirect, render
 from django.http import HttpResponse
 from carts.models import Cart, CartItem
+from store.models import Product
 import datetime
+import json
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
 
 def payments(request):
-    return render(request, 'orders/payments.html')
+    if request.method == 'POST':
+        #body = json.loads(request.body)
+        order_number = request.POST.get('order_number')
+        order = Order.objects.get(user=request.user, is_ordered=False, order_number=order_number)
+
+        # Store transaction details inside Payment model
+        payment = Payment(
+            user = request.user,
+            payment_id = '1',
+            payment_method = 'Cash On Delivery',
+            amount_paid = order.order_total,
+            status = 'Accepted',
+        )
+        payment.save()
+
+        order.payment = payment
+        order.is_ordered = True
+        order.save()
+
+        # Move the cart items to Order Product table
+        cart_items = CartItem.objects.filter(user=request.user)
+
+        for item in cart_items:
+            orderproduct = OrderProduct()
+            orderproduct.order_id = order.id
+            orderproduct.payment = payment
+            orderproduct.user_id = request.user.id
+            orderproduct.product_id = item.product_id
+            orderproduct.quantity = item.qunatity
+            orderproduct.product_price = item.product.price
+            orderproduct.ordered = True
+            orderproduct.save()
+
+            cart_item = CartItem.objects.get(id = item.id)
+            product_variation = cart_item.variations.all()
+            orderproduct = OrderProduct.objects.get(id = orderproduct.id)
+            orderproduct.variations.set(product_variation)
+            orderproduct.save()
+
+        # Decrease the Product Stock
+        product = Product.objects.get(id = item.product_id)
+        product.stock -= orderproduct.quantity
+        product.save()
+
+        #Send Order Confirmation Email
+        mail_subject = 'Thank you for your order'
+        message = render_to_string('orders/order_received_email.html',{
+                'user' : request.user,
+                'order' : order
+
+            })
+        to_email = request.user.email
+        send_mail = EmailMessage(mail_subject, message, to=[to_email])
+        send_mail.send()
+
+        # Clear the Cart Items
+        CartItem.objects.filter(user = request.user).delete()
+
+        orderproducts = OrderProduct.objects.filter(order_id = order.id)
+
+        sub_total = 0
+        for i in orderproducts:
+            sub_total += i.product_price * i.quantity
+
+        context = {
+            'order' : order,
+            'order_number' : order.order_number,
+            'payment' : payment,
+            'orderproducts' : orderproducts,
+            'sub_total' : sub_total
+        }
+
+    return render(request, 'orders/order_complete.html', context)
 
 def place_order(request, total = 0, quantity = 0):
     current_user = request.user
@@ -68,3 +144,6 @@ def place_order(request, total = 0, quantity = 0):
             return render(request, 'orders/payments.html', context)
         else:
             return redirect('checkout')
+
+def order_complete(request):
+    return render(request, 'orders/order_complete.html')

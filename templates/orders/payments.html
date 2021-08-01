@@ -73,7 +73,8 @@
               </div>
         </aside> <!-- col.// -->
         <aside class="col-lg-4">
-    
+          <form action="{% url 'payments' %}" method="POST">
+            {% csrf_token %}
             <div class="card">
             <div class="card-body">
                 <dl class="dlist-align">
@@ -89,12 +90,14 @@
                   <dd class="text-right text-dark b"><strong>${{grand_total}}</strong></dd>
                 </dl>
                 <hr>
+                <input style="display: none;" type="text" name="order_number" value={{order.order_number}}>
                 <p class="text-center mb-3">
                     <img src="{% static './images/misc/payments.png'%}" height="26">
                 </p>
-                <a href="{% url 'checkout'%}" class="btn btn-primary btn-block"> Pay Order </a>
+                <button class="btn btn-primary btn-block"> Pay Order </button>
             </div> <!-- card-body.// -->
             </div> <!-- card.// -->
+          </form>
     
     </aside> <!-- col.// -->
     

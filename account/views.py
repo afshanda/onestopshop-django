@@ -1,11 +1,13 @@
-from decimal import Overflow
+from decimal import Context, Overflow
+from django.contrib.auth.models import User
+from django.db import models
 from django.db.models import query
 from carts.models import Cart, CartItem
 from django.contrib import messages, auth
 from django.http.response import HttpResponse
-from account.models import Account
-from django.shortcuts import redirect, render
-from .forms import AccountRegistration
+from account.models import Account, UserProfile
+from django.shortcuts import redirect, render, get_object_or_404
+from .forms import AccountRegistration, UserForm, UserProfileForm
 from django.contrib.auth.decorators import login_required
 
 from django.contrib.sites.shortcuts import get_current_site
@@ -16,6 +18,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import EmailMessage
 from carts.views import _cart_id
 import requests
+from orders.models import Order, OrderProduct
 
 def register(request):
     if request.method == 'POST':
@@ -30,6 +33,12 @@ def register(request):
             user = Account.objects.create_user(first_name = first_name, last_name=last_name, email = email, password = password, username = user_name)
             user.phone_number = phone_number
             user.save()
+
+            #Create User Profile
+            profile = UserProfile()
+            profile.user_id = user.id
+            profile.profile_picture = 'default/default-user.jpg'
+            profile.save()
 
             #User Activation
             current_site = get_current_site(request)
@@ -64,40 +73,43 @@ def login(request):
         
         user = auth.authenticate(email = email, password = password)
         if user is not None:
-            cart = Cart.objects.get(cart_id = _cart_id(request))
-            is_cart_item_exists = CartItem.objects.filter(cart = cart).exists
+            if Cart.objects.filter(cart_id = _cart_id(request)).exists():
+                cart = Cart.objects.get(cart_id = _cart_id(request))
+                is_cart_item_exists = CartItem.objects.filter(cart = cart).exists()
 
-            if is_cart_item_exists:
-                cart_item = CartItem.objects.filter(cart = cart)
+                if is_cart_item_exists:
+                    cart_item = CartItem.objects.filter(cart = cart)
 
-                #get the cart items when user was not logged in
-                product_variation = []
-                for item in cart_item:
-                    variation = item.variations.all()
-                    product_variation.append(list(variation))
+                    #get the cart items when user was not logged in
+                    product_variation = []
+                    for item in cart_item:
+                        variation = item.variations.all()
+                        product_variation.append(list(variation))
 
-                # get the cart items when user was logged in
-                cart_item = CartItem.objects.filter(user = user)
-                ex_var_list = []
-                id = []
-                for item in cart_item:
-                    existing_variation = item.variations.all()
-                    ex_var_list.append(list(existing_variation))
-                    id.append(item.id)
+                    # get the cart items when user was logged in
+                    cart_item = CartItem.objects.filter(user = user)
+                    ex_var_list = []
+                    id = []
+                    for item in cart_item:
+                        existing_variation = item.variations.all()
+                        ex_var_list.append(list(existing_variation))
+                        id.append(item.id)
 
-                for pr in product_variation:
-                    if pr in ex_var_list:
-                        index = ex_var_list.index(pr)
-                        item_id = id[index]
-                        item = CartItem.objects.get(id = item_id)
-                        item.qunatity +=1
-                        item.user = user
-                        item.save()
-                    else:
-                        cart_item = CartItem.objects.filter(cart = cart)
-                        for item in cart_item:
+                    for pr in product_variation:
+                        if pr in ex_var_list:
+                            index = ex_var_list.index(pr)
+                            item_id = id[index]
+                            item = CartItem.objects.get(id = item_id)
+                            item.qunatity +=1
                             item.user = user
                             item.save()
+                        else:
+                            cart_item = CartItem.objects.filter(cart = cart)
+                            for item in cart_item:
+                                item.user = user
+                                item.save()
+                else:
+                    pass
             else:
                 pass
             auth.login(request, user)
@@ -143,7 +155,17 @@ def activate(request, uidb64, token):
 
 @login_required(login_url= 'login')
 def dashboard(request):
-    return render(request, 'account/dashboard.html')
+    orders = Order.objects.order_by('-created_at').filter(user__id = request.user.id, is_ordered = True)
+    order_count = orders.count()
+
+    print('1111111111111111' , request.user.id)
+    userProfile = UserProfile.objects.get(user_id = request.user.id)
+
+    context = {
+        'order_count' : order_count,
+        'userProfile' : userProfile,
+    }
+    return render(request, 'account/dashboard.html', context)
 
 def forgotpassword(request):
     if request.method == 'POST':
@@ -205,3 +227,71 @@ def resetpassword(request):
             return redirect('resetpassword')
     else:
         return render(request, 'account/resetpassword.html')
+
+def my_orders(request):
+    orders = Order.objects.filter(user = request.user, is_ordered = True)
+    context = {
+        'orders' : orders
+    }
+    return render(request, 'account/my_orders.html', context)
+
+def edit_profile(request):
+    userProfile = get_object_or_404(UserProfile, user = request.user)
+    if request.method == 'POST':
+        user_form = UserForm(request.POST, instance=request.user)
+        profile_form = UserProfileForm(request.POST, request.FILES, instance = userProfile)
+
+        if user_form.is_valid() and profile_form.is_valid():
+            user_form.save()
+            profile_form.save()
+            messages.success(request, 'Your Profile has been updated')
+            return redirect('edit_profile')
+    else:
+        user_form = UserForm(instance=request.user)
+        profile_form = UserProfileForm(instance=userProfile)
+    
+    context = {
+        'user_form' : user_form ,
+        'profile_form' : profile_form,
+        'userProfile' : userProfile
+    }
+    return render(request, 'account/edit_profile.html', context)
+
+@login_required(login_url='login')
+def edit_password(request):
+    if request.method == 'POST':
+        current_password = request.POST['current_password']
+        new_password = request.POST['new_password']
+        confirm_password = request.POST['confirm_password']
+
+        user = Account.objects.get(username__exact = request.user.username)
+
+        if new_password == confirm_password:
+            success = user.check_password(current_password)
+            if success:
+                user.set_password(new_password)
+                user.save()
+                messages.success(request, 'Password Updated Successfully')
+                return redirect('edit_password')
+            else:
+                messages.error(request, 'Please enter valid password')
+                return redirect('edit_password')
+
+        else:
+            messages.error(request, 'Password does not match!')
+            return redirect('edit_password')
+    return render(request, 'account/edit_password.html')
+
+def order_detail(request, order_id):
+    order_detail = OrderProduct.objects.filter(order__order_number = order_id)
+    order = Order.objects.get(order_number = order_id)
+    sub_total = 0
+    
+    for i in order_detail:
+        sub_total += sub_total + (i.product_price )
+    context = {
+        'order_detail' : order_detail,
+        'order' : order,
+        'sub_total' : sub_total,
+    }
+    return render(request, 'account/order_detail.html', context)
